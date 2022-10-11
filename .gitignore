@@ -3,9 +3,9 @@ tmp/
 **/build/**
 **/__pycache__/
 
-kloug_riscof/riscof_work/**
+kloug_riscof/riscof_work/
+kloug_riscof/riscv-arch-test/
 
 test/
 
 
-kloug_riscof/riscv-arch-test/

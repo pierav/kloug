@@ -1,5 +1,6 @@
 
 #include "kloug.h"
+#include "kloug_arch.h"
 #include "isa.h"
 #include <assert.h>
 #include <stdarg.h>
@@ -30,111 +31,16 @@ bool error(bool terminal, const char *fmt, ...) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// PO fake memory
+// I/O Interface
 ////////////////////////////////////////////////////////////////////////////////
 
-static uint8_t po_mem[PO_MEM_SIZE];
-
-void kloug_mem_init(void *mem, uint64_t size) {
-    assert(PO_MEM_SIZE >= size);
-    memcpy(po_mem, mem, size);
+void *kloug_mem_proxy(uint64_t addr) {
+    return bus_proxy(addr);
 }
 
-void *kloug_mem_proxy(uint32_t addr) {
-    if ((addr - PO_MEM_BASE) > PO_MEM_SIZE) {
-        fprintf(stderr, "SimError: addr(%x) > PO_MEM_SIZE(%x)\n",
-                addr - PO_MEM_BASE, PO_MEM_SIZE);
-        abort();
-    }
-    return po_mem + addr - PO_MEM_BASE;
-}
-
-bool mem_valid_addr(uint64_t addr) {
-    return (addr >= PO_MEM_BASE) && (addr < (PO_MEM_BASE + PO_MEM_SIZE));
-}
-
-void mem_reset(void) { memset(po_mem, 0, sizeof(po_mem)); }
-
-bool mem_write8(uint64_t addr, uint8_t data) {
-    if (mem_valid_addr(addr)) {
-        po_mem[addr - PO_MEM_BASE] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read8(uint64_t addr, uint8_t *data) {
-    if (mem_valid_addr(addr)) {
-        *data = po_mem[addr - PO_MEM_BASE];
-        return true;
-    }
-    return false;
-}
-
-bool mem_write16(uint64_t addr, uint16_t data) {
-    if (mem_valid_addr(addr) && (addr & 0b1) == 0) {
-        ((uint16_t *)po_mem)[(addr - PO_MEM_BASE) >> 1] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read16(uint64_t addr, uint16_t *data) {
-    if (mem_valid_addr(addr) && (addr & 0b1) == 0) {
-        *data = ((uint16_t *)po_mem)[(addr - PO_MEM_BASE) >> 1];
-        return true;
-    }
-    return false;
-}
-
-bool mem_write32(uint64_t addr, uint32_t data) {
-    if (mem_valid_addr(addr) && (addr & 0b11) == 0) {
-        ((uint32_t *)po_mem)[(addr - PO_MEM_BASE) >> 2] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read32(uint64_t addr, uint32_t *data) {
-    if (mem_valid_addr(addr) && (addr & 0b11) == 0) {
-        *data = ((uint32_t *)po_mem)[(addr - PO_MEM_BASE) >> 2];
-        return true;
-    }
-    return false;
-}
-
-bool mem_write64(uint64_t addr, uint64_t data) {
-    if (mem_valid_addr(addr) && (addr & 0b111) == 0) {
-        ((uint64_t *)po_mem)[(addr - PO_MEM_BASE) >> 3] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read64(uint64_t addr, uint64_t *data) {
-    if (mem_valid_addr(addr) && (addr & 0b111) == 0) {
-        *data = ((uint64_t *)po_mem)[(addr - PO_MEM_BASE) >> 3];
-        return true;
-    }
-    return false;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
-// PO fake uart
-////////////////////////////////////////////////////////////////////////////////
-
-void uart_putchar(char c) { fprintf(stdout, "%c", c); }
-
-char uart_getchar(void) { return getchar(); }
-
-////////////////////////////////////////////////////////////////////////////////
-// PO bus
-////////////////////////////////////////////////////////////////////////////////
-
-void bus_write64(uint64_t addr, uint64_t data) {}
-
-////////////////////////////////////////////////////////////////////////////////
-// PO cpu
+// CPU
 ////////////////////////////////////////////////////////////////////////////////
 
 #define LOG_INST      (1 << 0)
@@ -144,7 +50,7 @@ void bus_write64(uint64_t addr, uint64_t data) {}
 #define LOG_MMU       (1 << 4)
 #define LOG_ARCH      (1 << 5)
 
-uint32_t trace_cfg = 0xFFFFFFFF * 0 + LOG_INST + LOG_MEM + LOG_ARCH;
+uint32_t trace_cfg = 0xFFFFFFFF * 0; // + LOG_INST + LOG_MEM + LOG_ARCH;
 
 #define LOG(l, format, ...)                \
     do {                                   \
@@ -250,7 +156,7 @@ void kloug_reset(void) {
 ////////////////////////////////////////////////////////////////////////////////
 
 int mmu_read_word(uint64_t address, uint64_t *val) {
-    return mem_read64(address, val);
+    return bus_read(address, val, 8, 0);
 }
 
 void mmu_flush(void) {
@@ -335,7 +241,7 @@ uint64_t mmu_walk(uint64_t addr) {
                 LOG(LOG_MMU, "MMU: PTE addr %x (%x)\n", ptd_addr, pte);
 
                 // fault if physical addr is out of range
-                if (mem_valid_addr(ptd_addr)) {
+                if (bus_valid_addr(ptd_addr)) {
                     LOG(LOG_MMU, "MMU: PTE entry found %x\n", pte);
                 } else {
                     LOG(LOG_MMU, "MMU: PTE access out of range %x\n",
@@ -502,44 +408,13 @@ int load(uint64_t pc, uint64_t address, uint64_t *result, int width,
     }
 
     // Invalid load
-    if (!mem_valid_addr(physical)) {
+    if (!bus_valid_addr(physical)) {
         exception(MCAUSE_FAULT_LOAD, pc, address);
         error(false, "%08x: Bad memory access 0x%x\n", pc, address);
         return 0;
     }
 
-    switch (width) {
-    case 8: {
-        mem_read64(physical, result);
-    } break;
-    case 4: {
-        uint32_t dw = 0;
-        mem_read32(physical, &dw);
-        *result = dw;
-        if (signedLoad && ((*result) & (1 << 31))) {
-            *result |= 0xFFFFFFFF00000000;
-        }
-    } break;
-    case 2: {
-        uint16_t dh = 0;
-        mem_read16(physical, &dh);
-        *result |= dh;
-        if (signedLoad && ((*result) & (1 << 15))) {
-            *result |= 0xFFFFFFFFFFFF0000;
-        }
-    } break;
-    case 1: {
-        uint8_t db = 0;
-        mem_read8(physical, &db);
-        *result |= ((uint32_t)db << 0);
-        if (signedLoad && ((*result) & (1 << 7))) {
-            *result |= 0xFFFFFFFFFFFFFF00;
-        }
-    } break;
-    default:
-        assert(!"Invalid");
-        break;
-    }
+    bus_read(address, result, width, signedLoad);
 
     LOG(LOG_MEM, "LOAD_RESULT: 0x%08x\n", *result);
     return 1;
@@ -556,7 +431,7 @@ int store(uint64_t pc, uint64_t address, uint64_t data, int width) {
     LOG(LOG_MEM, "STORE: VA 0x%08x PA 0x%08x Value 0x%08x Width %d\n", address,
         physical, data, width);
 
-    // Detect misaligned load
+    // Detect misaligned store
     if (((address & 0b111) != 0 && width == 8) ||
         ((address & 0b011) != 0 && width == 4) ||
         ((address & 0b001) != 0 && width == 2)) {        
@@ -564,30 +439,15 @@ int store(uint64_t pc, uint64_t address, uint64_t data, int width) {
         return 0;
     }
 
-    // Invalid load
-    if (!mem_valid_addr(physical)) {
+    // Invalid store
+    if (!bus_valid_addr(physical)) {
         exception(MCAUSE_FAULT_STORE, pc, address);
         error(false, "%08x: Bad memory access 0x%x\n", pc, address);
         return 0;
     }
 
-    switch (width) {
-    case 8:
-        mem_write64(physical, data);
-        break;
-    case 4:
-        mem_write32(physical, data & 0xFFFFFFFF);
-        break;
-    case 2:
-        mem_write16(physical, data & 0xFFFF);
-        break;
-    case 1:
-        mem_write8(physical + 0, data & 0xFF);
-        break;
-    default:
-        assert(!"Invalid");
-        break;
-    }
+    bus_write(address, data, width);
+
     return 1;
 }
 
@@ -753,11 +613,10 @@ void exception(uint64_t cause, uint64_t pc, uint64_t badaddr) {
 
 bool execute(void) {
     LOG(LOG_ARCH, "--- clock ---\n");
-    LOG(LOG_ARCH, "LEVEL = %c = %d\n",
+    LOG(LOG_ARCH, "[%c]\n",
         m_csr_mpriv == PRIV_MACHINE ? 'M'
         : m_csr_mpriv == PRIV_SUPER ? 'S'
-                                    : 'U',
-        m_csr_mpriv);
+                                    : 'U');
     // Increment cycles
     m_csr_mcycle++;
 
@@ -772,16 +631,16 @@ bool execute(void) {
         exception(MCAUSE_MISALIGNED_FETCH, m_pc, m_pc);
         return false;
     }
+    assert(bus_valid_addr(phy_pc));
     LOG(LOG_OPCODES, "PC = %x\n", m_pc);
     // Get opcode at current PC
     uint64_t opcode = 0;
     if ((phy_pc & 2) == 0) {
-        mem_read32(phy_pc, (uint32_t *)&opcode);
+        bus_read(phy_pc, &opcode, 4, 0);
     } else {
-        // assert(0);
-        uint16_t op1 = 0, op2 = 0;
-        mem_read16(phy_pc + 0, &op1);
-        mem_read16(phy_pc + 2, &op2);
+        uint64_t op1 = 0, op2 = 0;
+        bus_read(phy_pc + 0, &op1, 2, 0);
+        bus_read(phy_pc + 2, &op2, 2, 0);
         opcode = ((uint64_t)op1 << 0) + ((uint64_t)op2 << 16);
     }
 

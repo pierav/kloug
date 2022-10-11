@@ -376,9 +376,13 @@ int main(int argc, char *argv[]) {
     uint64_t pc            = mem_base_addr;
     printf("MEM # = %x entry = %x\n", memimage_size, mem_base_addr);
     // copy image in memory
-    kloug_mem_init(memimage, memimage_size);
+    printf("Load image in memory ...\n");
     assert(mem_base_addr == PO_MEM_BASE);
+    assert(memimage_size < PO_MEM_SIZE);
+    memcpy(kloug_mem_proxy(mem_base_addr), memimage, memimage_size);
+    printf("Reset ...\n");
     kloug_reset();
+    printf("Run ...\n");
 #define getchar() 1
     while (getchar()) {
         kloug_step();
