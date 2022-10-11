@@ -144,7 +144,7 @@ void bus_write64(uint64_t addr, uint64_t data) {}
 #define LOG_MMU       (1 << 4)
 #define LOG_ARCH      (1 << 5)
 
-uint32_t trace_cfg = 0xFFFFFFFF * 0;
+uint32_t trace_cfg = 0xFFFFFFFF * 0 + LOG_INST + LOG_MEM + LOG_ARCH;
 
 #define LOG(l, format, ...)                \
     do {                                   \
@@ -494,9 +494,9 @@ int load(uint64_t pc, uint64_t address, uint64_t *result, int width,
     *result = 0;
 
     // Detect misaligned load
-    if (((address & 7) != 0 && width == 8) ||
-        ((address & 3) != 0 && width == 4) ||
-        ((address & 1) != 0 && width == 2)) {
+    if (((address & 0b111) != 0 && width == 8) ||
+        ((address & 0b011) != 0 && width == 4) ||
+        ((address & 0b001) != 0 && width == 2)) {
         exception(MCAUSE_MISALIGNED_LOAD, pc, address);
         return 0;
     }
@@ -557,16 +557,16 @@ int store(uint64_t pc, uint64_t address, uint64_t data, int width) {
         physical, data, width);
 
     // Detect misaligned load
-    if (((address & 7) != 0 && width == 8) ||
-        ((address & 3) != 0 && width == 4) ||
-        ((address & 1) != 0 && width == 2)) {
-        exception(MCAUSE_MISALIGNED_LOAD, pc, address);
+    if (((address & 0b111) != 0 && width == 8) ||
+        ((address & 0b011) != 0 && width == 4) ||
+        ((address & 0b001) != 0 && width == 2)) {        
+        exception(MCAUSE_MISALIGNED_STORE, pc, address);
         return 0;
     }
 
     // Invalid load
     if (!mem_valid_addr(physical)) {
-        exception(MCAUSE_FAULT_LOAD, pc, address);
+        exception(MCAUSE_FAULT_STORE, pc, address);
         error(false, "%08x: Bad memory access 0x%x\n", pc, address);
         return 0;
     }
@@ -699,16 +699,18 @@ bool access_csr(uint64_t address, uint64_t data, bool set, bool clr,
 ////////////////////////////////////////////////////////////////////////////////
 
 void exception(uint64_t cause, uint64_t pc, uint64_t badaddr) {
-    LOG(LOG_ARCH, "EXCEPTION!\n");
     uint64_t deleg;
     uint64_t bit;
 
     if (cause >= MCAUSE_INTERRUPT) { // Interrupt
         deleg = m_csr_mideleg;
         bit   = 1 << (cause - MCAUSE_INTERRUPT);
+        LOG(LOG_ARCH, "interruption %x, pc %x, badaddr %x\n",
+            (cause - MCAUSE_INTERRUPT), pc, badaddr);
     } else { // Exception
         deleg = m_csr_medeleg;
         bit   = 1 << cause;
+        LOG(LOG_ARCH, "exception %s, pc %x, badaddr %x\n", DISPLAY_MCAUSE[cause], pc, badaddr);
     }
 
     // Exception delegated to
@@ -780,7 +782,7 @@ bool execute(void) {
         uint16_t op1 = 0, op2 = 0;
         mem_read16(phy_pc + 0, &op1);
         mem_read16(phy_pc + 2, &op2);
-        opcode = (uint64_t)op1 << 0 + (uint64_t)op2 << 16;
+        opcode = ((uint64_t)op1 << 0) + ((uint64_t)op2 << 16);
     }
 
     LOG(LOG_OPCODES, "%08x: %08x\n", m_pc, opcode);
@@ -966,50 +968,68 @@ bool execute(void) {
     } else if ((opcode & INST_LB_MASK) == INST_LB) {
         LOG(LOG_INST, "%016llx: lb r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LB);
-        load(pc, reg_rs1 + imm12, &reg_rd, 1, true);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 1, true))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_LH_MASK) == INST_LH) {
         LOG(LOG_INST, "%016llx: lh r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LH);
-        load(pc, reg_rs1 + imm12, &reg_rd, 2, true);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 2, true))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_LW_MASK) == INST_LW) {
         INST_STAT(ENUM_INST_LW);
         LOG(LOG_INST, "%016llx: lw r%d, %d(r%d)\n", pc, rd, imm12, rs1);
-        load(pc, reg_rs1 + imm12, &reg_rd, 4, true);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 4, true))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_LBU_MASK) == INST_LBU) {
         LOG(LOG_INST, "%016llx: lbu r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LBU);
-        load(pc, reg_rs1 + imm12, &reg_rd, 1, false);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 1, false))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_LHU_MASK) == INST_LHU) {
         LOG(LOG_INST, "%016llx: lhu r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LHU);
-        load(pc, reg_rs1 + imm12, &reg_rd, 2, false);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 2, false))
+            pc += 4;    
+        else
+            return false;
     } else if ((opcode & INST_LWU_MASK) == INST_LWU) {
         LOG(LOG_INST, "%016llx: lwu r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LWU);
-        load(pc, reg_rs1 + imm12, &reg_rd, 4, false);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 4, false))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_SB_MASK) == INST_SB) {
         LOG(LOG_INST, "%016llx: sb %d(r%d), r%d\n", pc, storeimm, rs1, rs2);
         INST_STAT(ENUM_INST_SB);
-        store(pc, reg_rs1 + storeimm, reg_rs2, 1);
-        pc += 4;
+        if(store(pc, reg_rs1 + storeimm, reg_rs2, 1))
+            pc += 4;
+        else
+            return false;
         rd = 0;
     } else if ((opcode & INST_SH_MASK) == INST_SH) {
         LOG(LOG_INST, "%016llx: sh %d(r%d), r%d\n", pc, storeimm, rs1, rs2);
         INST_STAT(ENUM_INST_SH);
-        store(pc, reg_rs1 + storeimm, reg_rs2, 2);
-        pc += 4;
+        if(store(pc, reg_rs1 + storeimm, reg_rs2, 2))
+            pc += 4;
+        else
+            return false;
         rd = 0;
     } else if ((opcode & INST_SW_MASK) == INST_SW) {
         LOG(LOG_INST, "%016llx: sw %d(r%d), r%d\n", pc, storeimm, rs1, rs2);
         INST_STAT(ENUM_INST_SW);
-        store(pc, reg_rs1 + storeimm, reg_rs2, 4);
-        pc += 4;
+        if(store(pc, reg_rs1 + storeimm, reg_rs2, 4))
+            pc += 4;
+        else
+            return false;
         rd = 0;
     } else if ((opcode & INST_MUL_MASK) == INST_MUL) {
         LOG(LOG_INST, "%016llx: mul r%d, r%d, r%d\n", pc, rd, rs1, rs2);
@@ -1180,14 +1200,18 @@ bool execute(void) {
     } else if ((opcode & INST_SD_MASK) == INST_SD) {
         LOG(LOG_INST, "%016llx: sd %d(r%d), r%d\n", pc, storeimm, rs1, rs2);
         INST_STAT(ENUM_INST_SD);
-        store(pc, reg_rs1 + storeimm, reg_rs2, 8);
-        pc += 4;
+        if(store(pc, reg_rs1 + storeimm, reg_rs2, 8))
+            pc += 4;
+        else
+            return false;
         rd = 0;
     } else if ((opcode & INST_LD_MASK) == INST_LD) {
         LOG(LOG_INST, "%016llx: ld r%d, %d(r%d)\n", pc, rd, imm12, rs1);
         INST_STAT(ENUM_INST_LD);
-        load(pc, reg_rs1 + imm12, &reg_rd, 8, true);
-        pc += 4;
+        if(load(pc, reg_rs1 + imm12, &reg_rd, 8, true))
+            pc += 4;
+        else
+            return false;
     } else if ((opcode & INST_ADDIW_MASK) == INST_ADDIW) {
         LOG(LOG_INST, "%016llx: addiw r%d, r%d, %d\n", pc, rd, rs1, imm12);
         INST_STAT(ENUM_INST_ADDIW);
@@ -1533,7 +1557,6 @@ bool execute(void) {
                 pc += 2;
             else
                 return false;
-
             // No writeback
             rd = 0;
         }

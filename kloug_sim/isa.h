@@ -683,6 +683,23 @@ enum eRegisters {
 #define MCAUSE_PAGE_FAULT_STORE    (((uint64_t)0 << MCAUSE_INT) | 15)
 #define MCAUSE_INTERRUPT           (((uint64_t)1 << MCAUSE_INT))
 
+const char* DISPLAY_MCAUSE[] = {
+    [0]="MISALIGNED_FETCH",
+    [1]="FAULT_FETCH",
+    [2]="ILLEGAL_INSTRUCTION",
+    [3]="BREAKPOINT",
+    [4]="MISALIGNED_LOAD",
+    [5]="FAULT_LOAD",
+    [6]="MISALIGNED_STORE",
+    [7]="FAULT_STORE",
+    [8]="ECALL_U",
+    [9]="ECALL_S",
+    [11]="ECALL_M",
+    [12]="PAGE_FAULT_INST",
+    [13]="PAGE_FAULT_LOAD",
+    [15]="PAGE_FAULT_STORE"
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // MMU Defs
 ////////////////////////////////////////////////////////////////////////////////

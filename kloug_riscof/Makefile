@@ -15,7 +15,7 @@ testlists_gen:
 	riscof testlist --config=config.ini --suite=riscv-arch-test/riscv-test-suite/ --env=riscv-arch-test/riscv-test-suite/env
 
 run: kloug_fesvr
-	riscof --verbose debug run --no-browser --config=config.ini --suite=riscv-arch-test/riscv-test-suite/ --env=riscv-arch-test/riscv-test-suite/env
+	riscof --verbose info run --no-browser --config=config.ini --suite=riscv-arch-test/riscv-test-suite/ --env=riscv-arch-test/riscv-test-suite/env
 
 kloug_fesvr:
 	make -C $(PROJECT_DIR)/kloug_fesvr
