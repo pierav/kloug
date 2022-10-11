@@ -21,4 +21,5 @@ else
     echo "Using Spike from cached directory."
 fi
 
-export PKG_CONFIG_PATH=`realpath $PROJECT_DIR/tmp/riscv-isa-sim/build/
+export PKG_CONFIG_PATH=`realpath $PROJECT_DIR/tmp/riscv-isa-sim/build/`
+
