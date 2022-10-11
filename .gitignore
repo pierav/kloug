@@ -1,2 +1,11 @@
-tmp
+tmp/
+
 **/build/**
+**/__pycache__/
+
+kloug_riscof/riscof_work/**
+
+test/
+
+
+kloug_riscof/riscv-arch-test/

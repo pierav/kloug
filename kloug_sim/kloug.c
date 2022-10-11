@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 int      mmu_read_word(uint64_t address, uint64_t *val);
 void     mmu_flush(void);
@@ -21,9 +22,10 @@ void exception(uint64_t cause, uint64_t pc, uint64_t badaddr);
 bool error(bool terminal, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
+    printf("KlougError: ");
     vprintf(fmt, args);
     va_end(args);
-    exit(-1);
+    raise(SIGINT);
     return true;
 }
 
@@ -42,7 +44,7 @@ void *kloug_mem_proxy(uint32_t addr) {
     if ((addr - PO_MEM_BASE) > PO_MEM_SIZE) {
         fprintf(stderr, "SimError: addr(%x) > PO_MEM_SIZE(%x)\n",
                 addr - PO_MEM_BASE, PO_MEM_SIZE);
-        exit(1);
+        abort();
     }
     return po_mem + addr - PO_MEM_BASE;
 }
@@ -70,7 +72,7 @@ bool mem_read8(uint64_t addr, uint8_t *data) {
 }
 
 bool mem_write16(uint64_t addr, uint16_t data) {
-    if (mem_valid_addr(addr) && (addr & 1) == 0) {
+    if (mem_valid_addr(addr) && (addr & 0b1) == 0) {
         ((uint16_t *)po_mem)[(addr - PO_MEM_BASE) >> 1] = data;
         return true;
     }
@@ -78,7 +80,7 @@ bool mem_write16(uint64_t addr, uint16_t data) {
 }
 
 bool mem_read16(uint64_t addr, uint16_t *data) {
-    if (mem_valid_addr(addr) && (addr & 1) == 0) {
+    if (mem_valid_addr(addr) && (addr & 0b1) == 0) {
         *data = ((uint16_t *)po_mem)[(addr - PO_MEM_BASE) >> 1];
         return true;
     }
@@ -954,12 +956,12 @@ bool execute(void) {
     } else if ((opcode & INST_BLTU_MASK) == INST_BLTU) {
         LOG(LOG_INST, "%016llx: bltu r%d, r%d, %d\n", pc, rs1, rs2, bimm);
         INST_STAT(ENUM_INST_BLTU);
-        pc += ((int64_t)reg_rs1 < (int64_t)reg_rs2) ? bimm : 4;
+        pc += ((uint64_t)reg_rs1 < (uint64_t)reg_rs2) ? bimm : 4;
         rd = 0;
     } else if ((opcode & INST_BGEU_MASK) == INST_BGEU) {
         LOG(LOG_INST, "%016llx: bgeu r%d, r%d, %d\n", pc, rs1, rs2, bimm);
         INST_STAT(ENUM_INST_BGEU);
-        pc += ((int64_t)reg_rs1 >= (int64_t)reg_rs2) ? bimm : 4;
+        pc += ((uint64_t)reg_rs1 >= (uint64_t)reg_rs2) ? bimm : 4;
         rd = 0;
     } else if ((opcode & INST_LB_MASK) == INST_LB) {
         LOG(LOG_INST, "%016llx: lb r%d, %d(r%d)\n", pc, rd, imm12, rs1);
@@ -1017,23 +1019,20 @@ bool execute(void) {
     } else if ((opcode & INST_MULH_MASK) == INST_MULH) {
         LOG(LOG_INST, "%016llx: mulh r%d, r%d, r%d\n", pc, rd, rs1, rs2);
         INST_STAT(ENUM_INST_MULH);
-        long long res =
-            ((long long)(int64_t)reg_rs1) * ((long long)(int64_t)reg_rs2);
-        reg_rd = (int)(res >> 32);
+        signed __int128 res =((signed __int128)(int64_t)reg_rs1) * ((signed __int128)(int64_t)reg_rs2);
+        reg_rd = (int64_t)(res >> 64);
         pc += 4;
     } else if ((opcode & INST_MULHSU_MASK) == INST_MULHSU) {
         LOG(LOG_INST, "%016llx: mulhsu r%d, r%d, r%d\n", pc, rd, rs1, rs2);
         INST_STAT(ENUM_INST_MULHSU);
-        long long res =
-            ((long long)(int)reg_rs1) * ((unsigned long long)(unsigned)reg_rs2);
-        reg_rd = (int)(res >> 32);
+        signed __int128 res = ((signed __int128)(int64_t)reg_rs1) * ((unsigned __int128)(uint64_t)reg_rs2);
+        reg_rd = (int64_t)(res >> 64);
         pc += 4;
     } else if ((opcode & INST_MULHU_MASK) == INST_MULHU) {
         LOG(LOG_INST, "%016llx: mulhu r%d, r%d, r%d\n", pc, rd, rs1, rs2);
         INST_STAT(ENUM_INST_MULHU);
-        unsigned long long res = ((unsigned long long)(unsigned)reg_rs1) *
-                                 ((unsigned long long)(unsigned)reg_rs2);
-        reg_rd = (int)(res >> 32);
+        unsigned __int128 res = ((unsigned __int128)(uint64_t)reg_rs1) * ((unsigned __int128)(uint64_t)reg_rs2);
+        reg_rd = (uint64_t)(res >> 64);
         pc += 4;
     } else if ((opcode & INST_DIV_MASK) == INST_DIV) {
         LOG(LOG_INST, "%016llx: div r%d, r%d, r%d\n", pc, rd, rs1, rs2);
@@ -1241,8 +1240,7 @@ bool execute(void) {
     } else if ((opcode & INST_SRAW_MASK) == INST_SRAW) {
         LOG(LOG_INST, "%016llx: sraw r%d, r%d, r%d\n", pc, rd, rs1, rs2);
         INST_STAT(ENUM_INST_SRAW);
-        reg_rs2 &= SHIFT_MASK32;
-        reg_rd = SEXT32((int64_t)reg_rs1 >> reg_rs2);
+        reg_rd = SEXT32((int64_t)(int32_t)reg_rs1 >> (reg_rs2 & SHIFT_MASK32));
         pc += 4;
     } else if ((opcode & INST_MULW_MASK) == INST_MULW) {
         LOG(LOG_INST, "%016llx: mulw r%d, r%d, r%d\n", pc, rd, rs1, rs2);
@@ -1270,10 +1268,9 @@ bool execute(void) {
         LOG(LOG_INST, "%016llx: remw r%d, r%d, r%d\n", pc, rd, rs1, rs2);
         INST_STAT(ENUM_INST_REMW);
         if ((int64_t)(int32_t)reg_rs2 != 0)
-            reg_rd =
-                SEXT32((int64_t)(int32_t)reg_rs1 % (int64_t)(int32_t)reg_rs2);
+            reg_rd = SEXT32((int32_t)reg_rs1 % (int32_t)reg_rs2);
         else
-            reg_rd = reg_rs1;
+            reg_rd = SEXT32(reg_rs1);
         pc += 4;
     } else if ((opcode & INST_REMUW_MASK) == INST_REMUW) {
         LOG(LOG_INST, "%016llx: remuw r%d, r%d, r%d\n", pc, rd, rs1, rs2);
@@ -1281,7 +1278,7 @@ bool execute(void) {
         if ((uint32_t)reg_rs2 != 0)
             reg_rd = SEXT32((uint32_t)reg_rs1 % (uint32_t)reg_rs2);
         else
-            reg_rd = reg_rs1;
+            reg_rd = SEXT32(reg_rs1);
         pc += 4;
     }
     // A Extension
