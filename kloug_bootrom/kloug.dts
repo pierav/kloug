@@ -17,7 +17,7 @@
       reg = <0>;
       status = "okay";
       compatible = "riscv";
-      riscv,isa = "rv64imafdc";
+      riscv,isa = "rv64imac";
       mmu-type = "riscv,sv57";
       riscv,pmpregions = <16>;
       riscv,pmpgranularity = <4>;
@@ -39,11 +39,6 @@
     #size-cells = <2>;
     compatible = "XXX,kloug-bare-soc", "simple-bus";
     ranges;
-    clint@2000000 {
-      compatible = "riscv,clint0";
-      interrupts-extended = <&CPU0_intc 3 &CPU0_intc 7 >;
-      reg = <0x0 0x2000000 0x0 0xc0000>;
-    };
   };
   htif {
     compatible = "ucb,htif0";

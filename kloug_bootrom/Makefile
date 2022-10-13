@@ -26,6 +26,6 @@ clean:
 .PRECIOUS: %.img %.bin %.elf %.dtb
 
 # Generate c header
-gen/c/bootrom.h:
+gen/c/bootrom.h: bootrom.bin
 	mkdir -p $(@D)
-	xxd -i -n bootrom bootrom.bin > $@
+	xxd -i -n bootrom $< > $@

@@ -560,19 +560,44 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define CSR_MTVAL2   0x34B
 
 // Machine Configuration
-#define CSR_MEMVCFG 0x30A // Machine environment configuration register.
+#define CSR_MENVCFG 0x30A // Machine environment configuration register.
 #define CSR_MSECCFG 0x747 // Machine security configuration register.
 
 // Machine Memory Protection
 #define CSR_PMPCFG0  0x3A0
+#define CSR_PMPCFG2  0x3A2
+#define CSR_PMPCFG4  0x3A4
+#define CSR_PMPCFG6  0x3A6
+#define CSR_PMPCFG8  0x3A8
+#define CSR_PMPCFG10  0x3AA
+#define CSR_PMPCFG12  0x3AC
+#define CSR_PMPCFG14  0x3AE
+
 #define CSR_PMPADDR0 0x3B0
+#define CSR_PMPADDR1 0x3B1
+#define CSR_PMPADDR2 0x3B2
+#define CSR_PMPADDR3 0x3B3
+#define CSR_PMPADDR4 0x3B4
+#define CSR_PMPADDR5 0x3B5
+#define CSR_PMPADDR6 0x3B6
+#define CSR_PMPADDR7 0x3B7
+#define CSR_PMPADDR8 0x3B8
+#define CSR_PMPADDR9 0x3B9
+#define CSR_PMPADDR10 0x3BA
+#define CSR_PMPADDR11 0x3BB
+#define CSR_PMPADDR12 0x3BC
+#define CSR_PMPADDR13 0x3BD
+#define CSR_PMPADDR14 0x3BE
+#define CSR_PMPADDR15 0x3BF
 //...
+#define CSR_PMPADDR63 0x3EF
 
 // Machine Counter/Timers
 #define CSR_MCYCLE       0xB00
 #define CSR_MISNTRET     0xB02
 #define CSR_MHPMCOUNTER3 0xB03
 // ...
+#define CSR_MHPMCOUNTER31 0xB1F
 
 // Machine Counter Setup
 #define CSR_MCOUNTINHIBIT 0x320 // Machine counter-inhibit register.

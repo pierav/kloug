@@ -71,6 +71,8 @@ uint64_t m_pc_x;
 uint64_t m_load_res;
 
 // CSR - Machine
+uint64_t m_csr_mcounteren;
+
 uint64_t m_csr_mepc;
 uint64_t m_csr_mcause;
 uint64_t m_csr_msr;
@@ -86,11 +88,16 @@ uint64_t m_csr_mscratch;
 uint64_t m_csr_mideleg;
 uint64_t m_csr_medeleg;
 
+
+uint64_t m_csr_menvcfg;
+
 uint64_t m_csr_mcycle;
 uint64_t m_csr_minstret;
+uint64_t m_csr_mphcounter[CSR_MHPMCOUNTER31 - CSR_MHPMCOUNTER3];
+uint64_t m_csr_pmpaddr[64];
+uint64_t m_csr_pmpcfg[16];
 
-uint64_t m_csr_pmpaddr0;
-uint64_t m_csr_pmpcfg0;
+uint64_t m_csr_mcountinhibit;
 
 // CSR - Supervisor
 uint64_t m_csr_sepc;
@@ -122,6 +129,7 @@ void kloug_reset(void) {
     m_csr_mideleg = 0;
     m_csr_medeleg = 0;
 
+    m_csr_mcounteren = 0;
     m_csr_mepc     = 0;
     m_csr_mie      = 0;
     m_csr_mip      = 0;
@@ -133,6 +141,7 @@ void kloug_reset(void) {
     m_csr_mtime_ie = false;
     m_csr_mscratch = 0;
     m_csr_minstret = 0;
+    m_csr_menvcfg  = 0;
 
     m_csr_sepc     = 0;
     m_csr_sevec    = 0;
@@ -141,8 +150,11 @@ void kloug_reset(void) {
     m_csr_satp     = 0;
     m_csr_sscratch = 0;
 
-    m_csr_pmpaddr0 = 0;
-    m_csr_pmpcfg0  = 0;
+    memset(m_csr_mphcounter, 0, sizeof(m_csr_mphcounter));
+    memset(m_csr_pmpaddr, 0, sizeof(m_csr_pmpaddr));
+    memset(m_csr_pmpcfg, 0, sizeof(m_csr_pmpcfg));
+
+    m_csr_mcountinhibit = 0;
 
     m_csr_mcycle = 0;
     m_fault      = false;
@@ -284,8 +296,8 @@ int mmu_i_translate(uint64_t addr, uint64_t *physical) {
     else if (m_csr_mpriv == PRIV_SUPER) {
         // Supervisor attempts to execute user mode page
         if (pte & PAGE_USER) {
-            error(false, "IMMU: Attempt to execute user page 0x%08x\n", addr);
-            page_fault = true;
+            // error(false, "IMMU: Attempt to execute user page 0x%08x\n", addr);
+            // page_fault = true;
         }
         // Page not executable
         else if ((pte & (PAGE_EXEC)) != (PAGE_EXEC)) {
@@ -348,9 +360,11 @@ int mmu_d_translate(uint64_t pc, uint64_t addr, uint64_t *physical,
     else if (priv == PRIV_SUPER) {
         // User page access - super mode access not enabled
         if ((pte & PAGE_USER) && !(m_csr_msr & SR_SUM)) {
+            /*
             error(false,
                   "MMU_D: PC=%08x Access %08x - User page access by super\n",
                   pc, addr);
+            */
         } else if ((writeNotRead && ((pte & (PAGE_WRITE)) != (PAGE_WRITE))) ||
                    (!writeNotRead && ((pte & (PAGE_READ)) != (PAGE_READ)))) {
             page_fault = true;
@@ -515,8 +529,46 @@ bool access_csr(uint64_t address, uint64_t data, bool set, bool clr,
         mmu_flush();
     }
 
+    if((address & 0xFFF) >= CSR_PMPCFG0 && (address & 0xFFF) <= CSR_PMPCFG14){
+        uint64_t *csr = &m_csr_pmpcfg[((address & 0xFFF) - CSR_PMPCFG0) / 2];
+        *result = *csr;
+        if (set && clr)
+            *csr = data;
+        else if (set)
+            *csr |= data;
+        else if (clr)
+            *csr &= ~data;
+        return false;
+    }
+
+    if((address & 0xFFF) >= CSR_PMPADDR0 && (address & 0xFFF) <= CSR_PMPADDR63){
+        uint64_t *csr = &m_csr_pmpaddr[((address & 0xFFF) - CSR_PMPADDR0)];
+        *result = *csr;
+        if (set && clr)
+            *csr = data;
+        else if (set)
+            *csr |= data;
+        else if (clr)
+            *csr &= ~data;
+        return false;
+    }
+    
+    if((address & 0xFFF) >= CSR_MHPMCOUNTER3 && (address & 0xFFF) <= CSR_MHPMCOUNTER31){
+        uint64_t *csr = &m_csr_mphcounter[((address & 0xFFF) - CSR_MHPMCOUNTER3)];
+        *result = *csr;
+        if (set && clr)
+            *csr = data;
+        else if (set)
+            *csr |= data;
+        else if (clr)
+            *csr &= ~data;
+        return false;
+    }
+
     switch (address & 0xFFF) {
         // Standard - Machine
+        CSR_STD(MCOUNTEREN, m_csr_mcounteren);
+
         CSR_STD(MEPC, m_csr_mepc);
         CSR_STD(MTVEC, m_csr_mevec);
         CSR_STD(MTVAL, m_csr_mtval);
@@ -529,11 +581,13 @@ bool access_csr(uint64_t address, uint64_t data, bool set, bool clr,
         CSR_STD(MEDELEG, m_csr_medeleg);
         CSR_STD(MSCRATCH, m_csr_mscratch);
         CSR_CONST(MHARTID, 0);
+        CSR_STD(MENVCFG, m_csr_menvcfg);
 
-        CSR_STD(PMPADDR0, m_csr_pmpaddr0);
-        CSR_STD(PMPCFG0, m_csr_pmpcfg0);
+
         CSR_STD(MCYCLE, m_csr_mcycle);
         CSR_STD(MISNTRET, m_csr_minstret);
+
+        CSR_STD(MCOUNTINHIBIT, m_csr_mcountinhibit);
 
         // Standard - Supervisor
         CSR_STD(SEPC, m_csr_sepc);
@@ -547,7 +601,7 @@ bool access_csr(uint64_t address, uint64_t data, bool set, bool clr,
         CSR_STDS(SSTATUS, m_csr_msr);
 
     default:
-        error(false, "*** CSR address not supported %08x [PC=%08x]\n", address,
+        printf("*** CSR address not supported %08x [PC=%08x]\n", address,
               m_pc);
         break;
     }
@@ -1743,6 +1797,11 @@ void kloug_step(void) {
     }
     // Increment instructions-retired counter
     m_csr_minstret++;
+    // performance counter
+    for(int i = 0; i < sizeof(m_csr_mphcounter); i++){
+        int n_inc = !(m_csr_mcountinhibit >> (i + 3)) & 1;
+        m_csr_mphcounter[i] += 1 - n_inc;
+    }
     // Increment timer counter
     m_csr_mtime++;
     // Non-std: Timer should generate an internal interrupt?
