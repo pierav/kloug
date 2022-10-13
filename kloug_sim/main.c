@@ -383,7 +383,7 @@ int main(int argc, char *argv[]) {
     printf("Reset ...\n");
     kloug_reset();
     printf("Run ...\n");
-#define getchar() 1
+// #define getchar() 1
     while (getchar()) {
         kloug_step();
     }

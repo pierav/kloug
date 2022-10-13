@@ -8,7 +8,7 @@ all: $(EXEC) $(LIB)
 
 build/%.o: %.c
 	@mkdir -p $(@D)
-	gcc -I. -c $< -o $@ 
+	gcc -I. -I$(PROJECT_DIR)/kloug_bootrom/gen/c -c $< -o $@ 
 
 $(LIB): $(OBJ)
 	rm -rf $@

@@ -71,6 +71,77 @@ void *mem_proxy(uint64_t addr) {
 }
 
 
+// rom
+
+#include "bootrom.h"
+
+
+bool rom_write8(uint64_t addr, uint8_t data) {
+    return false;
+}
+
+bool rom_read8(uint64_t addr, uint8_t *data) {
+    *data = bootrom[addr];
+    return true;
+}
+
+bool rom_write16(uint64_t addr, uint16_t data) {
+    return false;
+}
+
+bool rom_read16(uint64_t addr, uint16_t *data) {
+    if ((addr & 0b1) == 0) {
+        *data = ((uint16_t *)bootrom)[(addr) >> 1];
+        return true;
+    }
+    return false;
+}
+
+bool rom_write32(uint64_t addr, uint32_t data) {
+    return false;
+}
+
+bool rom_read32(uint64_t addr, uint32_t *data) {
+    if ((addr & 0b11) == 0) {
+        *data = ((uint32_t *)bootrom)[(addr) >> 2];
+        return true;
+    }
+    return false;
+}
+
+bool rom_write64(uint64_t addr, uint64_t data) {
+    return false;
+}
+
+bool rom_read64(uint64_t addr, uint64_t *data) {
+    if ((addr & 0b111) == 0) {
+        *data = ((uint64_t *)bootrom)[(addr) >> 3];
+        return true;
+    }
+    return false;
+}
+
+void *rom_proxy(uint64_t addr) {
+    return bootrom + addr;
+}
+
+
+#define DEVICE_BOOTROM                              \
+    {                                               \
+        .name="bootrom",                            \
+        .base_addr=BOOTROM_BASE,                    \
+        .end_addr=BOOTROM_BASE + sizeof(bootrom),   \
+        .write64=rom_write64,                       \
+        .write32=rom_write32,                       \
+        .write16=rom_write16,                       \
+        .write8=rom_write8,                         \
+        .read64=rom_read64,                         \
+        .read32=rom_read32,                         \
+        .read16=rom_read16,                         \
+        .read8=rom_read8,                           \
+        .proxy=rom_proxy                            \
+    }
+
 // device
 struct device_slave_t{
     char *name;
@@ -88,7 +159,7 @@ struct device_slave_t{
 };
 
 
-#define NR_DEVICES 1
+#define NR_DEVICES 2
 static struct device_slave_t device_slave_list[NR_DEVICES]={
     {
         .name="ram",
@@ -103,7 +174,8 @@ static struct device_slave_t device_slave_list[NR_DEVICES]={
         .read16=mem_read16,
         .read8=mem_read8,
         .proxy=mem_proxy
-    }
+    }, 
+    DEVICE_BOOTROM
 };
 
 struct device_slave_t* bus_get_device(uint64_t addr);
@@ -111,7 +183,6 @@ struct device_slave_t* bus_get_device(uint64_t addr);
 struct device_slave_t* bus_get_device(uint64_t addr){
     for(int i = 0; i < NR_DEVICES; i++){
         struct device_slave_t* device = &device_slave_list[i];
-        // printf("device <%s> [%x %x]\n", device->name, device->base_addr, device->end_addr);
         if(addr >= device->base_addr && addr < device->end_addr){
             return device;
         }
@@ -196,3 +267,9 @@ bool bus_write(uint64_t addr, uint64_t data, uint8_t width){
 }
 
 
+void bus_display(void){
+    for(int i = 0; i < NR_DEVICES; i++){
+        struct device_slave_t* device = &device_slave_list[i];
+        printf("device <%16s> [%x %x]\n", device->name, device->base_addr, device->end_addr);
+    }
+}

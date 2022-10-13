@@ -110,7 +110,7 @@ bool m_break;
 bool m_fault;
 
 void kloug_reset(void) {
-    m_pc       = PO_MEM_BASE;
+    m_pc       = BOOTROM_BASE;
     m_load_res = 0;
 
     for (int i = 0; i < REGISTERS; i++) {
@@ -149,6 +149,7 @@ void kloug_reset(void) {
     m_break      = false;
 
     mmu_flush();
+    bus_display();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
