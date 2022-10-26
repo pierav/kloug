@@ -58,9 +58,18 @@ export CPLUS_INCLUDE_PATH=$RISCV/include
 
 runci ci/make-tmp.sh
 runci ci/install-riscv64.sh
-runci ci/install-fesvr.sh
 runci ci/build-riscv-tests.sh
 runci ci/install-spike.sh
+
+export PKG_CONFIG_PATH="`realpath $PROJECT_DIR/tmp/riscv-isa-sim/build/`"
+
+
+#
+# Custom
+#
+
+export PATH=$PATH:$PROJECT_DIR/kloug_fesvr/build/
+
 #
 # Misc
 #

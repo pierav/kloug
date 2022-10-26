@@ -9,3 +9,5 @@ kloug_riscof/riscv-arch-test/
 test/
 
 
+
+kloug_bootrom/gen/c/
