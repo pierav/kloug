@@ -1,4 +1,9 @@
 #pragma once
+#include <stdint.h>
+
+extern char DISPLAY_MPRIV[];
+extern const char* DISPLAY_MCAUSE[];
+char* display_csr(uint64_t csr);
 
 ////////////////////////////////////////////////////////////////////////////////
 // General:
@@ -418,6 +423,7 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 ////////////////////////////////////////////////////////////////////////////////
 // Privilege levels
 ////////////////////////////////////////////////////////////////////////////////
+
 #define PRIV_USER    0
 #define PRIV_SUPER   1
 #define PRIV_MACHINE 3
@@ -431,7 +437,7 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define SR_MIE  (1 << 3) // interrupts are enabled
 #define SR_UPIE (1 << 4)
 #define SR_SPIE (1 << 5)
-// HPIE
+#define SR_UBE  (1 << 6)
 #define SR_MPIE \
     (1 << 7) // value of the interrupt-enable bit active prior to the trap
 #define SR_SPP (1 << 8) // previous privilege mode
@@ -444,24 +450,31 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define SR_MPP_S        (PRIV_SUPER << SR_MPP_SHIFT)
 #define SR_MPP_M        (PRIV_MACHINE << SR_MPP_SHIFT)
 #define SR_GET_MPP(val) (((val) >> SR_MPP_SHIFT) & SR_MPP_MASK)
-// FS 13
-// FS 14
-// XS 15
-// XS 16
+#define SR_FS_SHIFT 13
+#define SR_FS_MASK 0b11
+#define SR_XS_SHIFT 15
+#define SR_XS_MASK 0b11
+
 #define SR_MPRV (1 << 17)
 #define SR_SUM  (1 << 18)
 #define SR_MXR  (1 << 19)
-// WPRI 20
-// 21
-// 22
-// 24
+#define SR_TVM  (1 << 20)
+#define SR_TW   (1 << 21)
+#define SR_TSR  (1 << 22)
 
 #define SR_UXL    ((uint64_t)2 << 32)
 #define SR_SXL    ((uint64_t)2 << 34)
 #define SR_XLEN64 (SR_UXL | SR_SXL)
 
-#define SR_SMODE_MASK \
-    (SR_UXL | SR_UIE | SR_SIE | SR_UPIE | SR_SPIE | SR_SPP | SR_SUM)
+#define SR_SBE  ((uint64_t)1 << 36)
+#define SR_MBE  ((uint64_t)1 << 37)
+#define SR_SD   ((uint64_t)1 << 63)
+
+#define CSR_MSTATUS_MASK ((uint64_t)0xFFFFFFFFFFFFFFFFULL)
+// \
+    -((uint64_t)0b1111 << SR_FS_SHIFT) \
+    -((uint64_t)0b1111 << 32))
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // IRQ Numbers
@@ -474,16 +487,22 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define IRQ_M_EXT   11
 #define IRQ_MIN     (IRQ_S_SOFT)
 #define IRQ_MAX     (IRQ_M_EXT + 1)
-#define IRQ_MASK                                                \
-    ((1 << IRQ_M_EXT) | (1 << IRQ_S_EXT) | (1 << IRQ_M_TIMER) | \
-     (1 << IRQ_S_TIMER) | (1 << IRQ_M_SOFT) | (1 << IRQ_S_SOFT))
 
 #define SR_IP_MSIP (1 << IRQ_M_SOFT)
 #define SR_IP_MTIP (1 << IRQ_M_TIMER)
 #define SR_IP_MEIP (1 << IRQ_M_EXT)
+
 #define SR_IP_SSIP (1 << IRQ_S_SOFT)
 #define SR_IP_STIP (1 << IRQ_S_TIMER)
 #define SR_IP_SEIP (1 << IRQ_S_EXT)
+
+#define SR_IE_MSIE (1 << IRQ_M_SOFT)
+#define SR_IE_MTIE (1 << IRQ_M_TIMER)
+#define SR_IE_MEIE (1 << IRQ_M_EXT)
+
+#define SR_IE_SSIE (1 << IRQ_S_SOFT)
+#define SR_IE_STIE (1 << IRQ_S_TIMER)
+#define SR_IE_SEIE (1 << IRQ_S_EXT)
 
 ////////////////////////////////////////////////////////////////////////////////
 // SATP CSR bits
@@ -493,6 +512,13 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define SATP_ASID_SHIFT 44
 #define SATP_ASID_MASK  0xFFFF
 #define SATP_MODE       0xF000000000000000
+#define SATP_MODE_SHIFT 60
+#define SATP_MODE_MASK  0xF
+
+#define SATP_MODE_BARE 0x0
+#define SATP_MODE_SV39 0x8
+#define SATP_MODE_SV48 0x9
+#define SATP_MODE_SV57 10
 
 ////////////////////////////////////////////////////////////////////////////////
 // CSR Registers - Unprivilieged
@@ -535,7 +561,7 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Machine Information Registers MRO
-#define CSR_MVENRORID  0xF11 // Vendor ID.
+#define CSR_MVENDORID  0xF11 // Vendor ID.
 #define CSR_MARCHID    0xF12 // Architecture ID.
 #define CSR_MIMPID     0xF13 // Implementation ID.
 #define CSR_MHARTID    0xF14 // Hardware thread ID.
@@ -549,6 +575,8 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define CSR_MIE        0x304
 #define CSR_MTVEC      0x305
 #define CSR_MCOUNTEREN 0x306
+
+
 
 // Machine Trap Handling
 #define CSR_MSCRATCH 0x340
@@ -601,15 +629,9 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 
 // Machine Counter Setup
 #define CSR_MCOUNTINHIBIT 0x320 // Machine counter-inhibit register.
-#define CSR_MHPEVENT3     0x323 // Machine performance-monitoring event selector.
+#define CSR_MHPMEVENT3     0x323 // Machine performance-monitoring event selector.
 // ...
-
-// 0x323 MRW mhpmevent3 Machine performance-monitoring event selector.
-// 0x324 MRW mhpmevent4 Machine performance-monitoring event selector.
-// .
-// .
-// .
-// 0x33F MRW mhpmevent31 Machine performance-monitoring event selector
+#define CSR_MHPMEVENT31 0x33F
 
 // Debug/Trace Registers (shared with Debug Mode)
 // 0x7A0 MRW tselect Debug/Trace trigger register select.
@@ -633,6 +655,7 @@ static const char *inst_names[ENUM_INST_MAX + 1] = {
 #define CSR_SIE        0x104
 #define CSR_STVEC      0x105
 #define CSR_SCOUNTEREN 0x106
+
 
 // Supervisor Configuration
 #define CSR_SENVCFG 0x10A
@@ -708,23 +731,6 @@ enum eRegisters {
 #define MCAUSE_PAGE_FAULT_STORE    (((uint64_t)0 << MCAUSE_INT) | 15)
 #define MCAUSE_INTERRUPT           (((uint64_t)1 << MCAUSE_INT))
 
-const char* DISPLAY_MCAUSE[] = {
-    [0]="MISALIGNED_FETCH",
-    [1]="FAULT_FETCH",
-    [2]="ILLEGAL_INSTRUCTION",
-    [3]="BREAKPOINT",
-    [4]="MISALIGNED_LOAD",
-    [5]="FAULT_LOAD",
-    [6]="MISALIGNED_STORE",
-    [7]="FAULT_STORE",
-    [8]="ECALL_U",
-    [9]="ECALL_S",
-    [11]="ECALL_M",
-    [12]="PAGE_FAULT_INST",
-    [13]="PAGE_FAULT_LOAD",
-    [15]="PAGE_FAULT_STORE"
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 // MMU Defs
 ////////////////////////////////////////////////////////////////////////////////
@@ -733,9 +739,10 @@ const char* DISPLAY_MCAUSE[] = {
 #define MMU_PTESIZE   8
 #define MMU_PGSHIFT   12
 #define MMU_PGSIZE    (1 << MMU_PGSHIFT)
-#define MMU_VPN_BITS  (MMU_PTIDXBITS * MMU_LEVELS)
-#define MMU_PPN_BITS  (32 - MMU_PGSHIFT)
+#define MMU_VPN_BITS  (MMU_PTIDXBITS * MMU_LEVELS) // 27
 #define MMU_VA_BITS   (MMU_VPN_BITS + MMU_PGSHIFT)
+#define MMU_PPN_BITS  44
+
 
 #define PAGE_PRESENT  (1 << 0)
 #define PAGE_READ     (1 << 1) // Readable
@@ -746,6 +753,8 @@ const char* DISPLAY_MCAUSE[] = {
 #define PAGE_ACCESSED (1 << 6) // Set by hardware on any access
 #define PAGE_DIRTY    (1 << 7) // Set by hardware on any write
 #define PAGE_SOFT     (3 << 8) // Reserved for software
+#define PAGE_N        ((uint64_t)1 << 63)
+#define PAGE_PBMT     ((uint64_t)0b11 << 61)
 
 #define PAGE_FLAGS (0x3FF)
 
@@ -755,4 +764,6 @@ const char* DISPLAY_MCAUSE[] = {
      PAGE_PRESENT)
 
 #define PAGE_PFN_SHIFT 10
+#define PAGE_PFN_MASK ((((uint64_t)1 << (MMU_PPN_BITS)) -1))
+
 #define PAGE_SIZE      4096

@@ -375,13 +375,15 @@ int main(int argc, char *argv[]) {
     uint64_t mem_base_addr = elf_get_entry(elf);
     uint64_t pc            = mem_base_addr;
     printf("MEM # = %x entry = %x\n", memimage_size, mem_base_addr);
-    // copy image in memory
+    
+    // Run proc
+    kloug_init(NULL);
+    printf("Reset ...\n");
+    kloug_reset();
     printf("Load image in memory ...\n");
     assert(mem_base_addr == PO_MEM_BASE);
     assert(memimage_size < PO_MEM_SIZE);
     memcpy(kloug_mem_proxy(mem_base_addr), memimage, memimage_size);
-    printf("Reset ...\n");
-    kloug_reset();
     printf("Run ...\n");
 // #define getchar() 1
     while (getchar()) {

@@ -4,185 +4,73 @@
 #include <stdlib.h>
 #include <assert.h>
 
-// Main memory
-
-static uint8_t po_mem[PO_MEM_SIZE];
-
-bool mem_write8(uint64_t addr, uint8_t data) {
-    po_mem[addr] = data;
-    return true;
-}
-
-bool mem_read8(uint64_t addr, uint8_t *data) {
-    *data = po_mem[addr];
-    return true;
-}
-
-bool mem_write16(uint64_t addr, uint16_t data) {
-    if ((addr & 0b1) == 0) {
-        ((uint16_t *)po_mem)[(addr) >> 1] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read16(uint64_t addr, uint16_t *data) {
-    if ((addr & 0b1) == 0) {
-        *data = ((uint16_t *)po_mem)[(addr) >> 1];
-        return true;
-    }
-    return false;
-}
-
-bool mem_write32(uint64_t addr, uint32_t data) {
-    if ((addr & 0b11) == 0) {
-        ((uint32_t *)po_mem)[(addr) >> 2] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read32(uint64_t addr, uint32_t *data) {
-    if ((addr & 0b11) == 0) {
-        *data = ((uint32_t *)po_mem)[(addr) >> 2];
-        return true;
-    }
-    return false;
-}
-
-bool mem_write64(uint64_t addr, uint64_t data) {
-    if ((addr & 0b111) == 0) {
-        ((uint64_t *)po_mem)[(addr) >> 3] = data;
-        return true;
-    }
-    return false;
-}
-
-bool mem_read64(uint64_t addr, uint64_t *data) {
-    if ((addr & 0b111) == 0) {
-        *data = ((uint64_t *)po_mem)[(addr) >> 3];
-        return true;
-    }
-    return false;
-}
-
-void *mem_proxy(uint64_t addr) {
-    return po_mem + addr;
-}
-
-
-// rom
-
-#include "bootrom.h"
-
-
-bool rom_write8(uint64_t addr, uint8_t data) {
-    return false;
-}
-
-bool rom_read8(uint64_t addr, uint8_t *data) {
-    *data = bootrom[addr];
-    return true;
-}
-
-bool rom_write16(uint64_t addr, uint16_t data) {
-    return false;
-}
-
-bool rom_read16(uint64_t addr, uint16_t *data) {
-    if ((addr & 0b1) == 0) {
-        *data = ((uint16_t *)bootrom)[(addr) >> 1];
-        return true;
-    }
-    return false;
-}
-
-bool rom_write32(uint64_t addr, uint32_t data) {
-    return false;
-}
-
-bool rom_read32(uint64_t addr, uint32_t *data) {
-    if ((addr & 0b11) == 0) {
-        *data = ((uint32_t *)bootrom)[(addr) >> 2];
-        return true;
-    }
-    return false;
-}
-
-bool rom_write64(uint64_t addr, uint64_t data) {
-    return false;
-}
-
-bool rom_read64(uint64_t addr, uint64_t *data) {
-    if ((addr & 0b111) == 0) {
-        *data = ((uint64_t *)bootrom)[(addr) >> 3];
-        return true;
-    }
-    return false;
-}
-
-void *rom_proxy(uint64_t addr) {
-    return bootrom + addr;
-}
-
-
-#define DEVICE_BOOTROM                              \
-    {                                               \
-        .name="bootrom",                            \
-        .base_addr=BOOTROM_BASE,                    \
-        .end_addr=BOOTROM_BASE + sizeof(bootrom),   \
-        .write64=rom_write64,                       \
-        .write32=rom_write32,                       \
-        .write16=rom_write16,                       \
-        .write8=rom_write8,                         \
-        .read64=rom_read64,                         \
-        .read32=rom_read32,                         \
-        .read16=rom_read16,                         \
-        .read8=rom_read8,                           \
-        .proxy=rom_proxy                            \
-    }
-
 // device
-struct device_slave_t{
+typedef struct device_slave_t{
+    void *device;
     char *name;
     uint64_t base_addr;
     uint64_t end_addr;
-    bool (*write64)(uint64_t addr, uint64_t data);
-    bool (*write32)(uint64_t addr, uint32_t data);
-    bool (*write16)(uint64_t addr, uint16_t data);
-    bool (*write8)(uint64_t addr, uint8_t data);
-    bool (*read64)(uint64_t addr, uint64_t *data);
-    bool (*read32)(uint64_t addr, uint32_t *data);
-    bool (*read16)(uint64_t addr, uint16_t *data);
-    bool (*read8)(uint64_t addr, uint8_t *data);
-    void* (*proxy)(uint64_t addr);
+    bool (*write)(void *device, uint64_t addr, uint64_t data, uint8_t width);
+    bool (*read)(void *device, uint64_t addr, uint64_t *data, uint8_t width);
+    void* (*proxy)(void *device, uint64_t addr);
+}device_slave_t;
+
+struct bus_t{
+    device_slave_t *device_slave_list;
+    uint64_t nr_devices;
 };
 
+#include "device_ram.h"
+#include "device_rom.h"
+#include "bootrom.h"
+#include "device_clint.h"
 
-#define NR_DEVICES 2
-static struct device_slave_t device_slave_list[NR_DEVICES]={
-    {
-        .name="ram",
-        .base_addr=PO_MEM_BASE,
-        .end_addr=PO_MEM_BASE + PO_MEM_SIZE,
-        .write64=mem_write64,
-        .write32=mem_write32,
-        .write16=mem_write16,
-        .write8=mem_write8,
-        .read64=mem_read64,
-        .read32=mem_read32,
-        .read16=mem_read16,
-        .read8=mem_read8,
-        .proxy=mem_proxy
-    }, 
-    DEVICE_BOOTROM
-};
 
-struct device_slave_t* bus_get_device(uint64_t addr);
+bus_t *bus_init(void){
+    bus_t *bus = calloc(1, sizeof(bus_t));
+    assert(bus);
+    bus->nr_devices = 3;
 
-struct device_slave_t* bus_get_device(uint64_t addr){
-    for(int i = 0; i < NR_DEVICES; i++){
-        struct device_slave_t* device = &device_slave_list[i];
+    // Create device list
+    bus->device_slave_list = calloc(bus->nr_devices, sizeof(device_slave_t));
+    
+    // RAM
+    ram_t* ram = ram_init(PO_MEM_SIZE);
+    bus->device_slave_list[0].device = ram;
+    bus->device_slave_list[0].name = "ram";
+    bus->device_slave_list[0].base_addr = PO_MEM_BASE;
+    bus->device_slave_list[0].end_addr = PO_MEM_BASE + PO_MEM_SIZE;
+    bus->device_slave_list[0].write = ram_write;
+    bus->device_slave_list[0].read = ram_read;
+    bus->device_slave_list[0].proxy = ram_proxy;
+
+    // ROM
+    rom_t* rom = rom_init(bootrom);
+    bus->device_slave_list[1].device = rom;
+    bus->device_slave_list[1].name = "bootrom";
+    bus->device_slave_list[1].base_addr = BOOTROM_BASE;
+    bus->device_slave_list[1].end_addr = BOOTROM_BASE + sizeof(bootrom);
+    bus->device_slave_list[1].write = NULL;
+    bus->device_slave_list[1].read = rom_read;
+    bus->device_slave_list[1].proxy = rom_proxy;
+
+    // CLINT
+    bus->device_slave_list[2].device = clint_init(1, NULL /* TODO */);
+    bus->device_slave_list[2].name = "clint (w/! int)";
+    bus->device_slave_list[2].base_addr = CLINT_BASE;
+    bus->device_slave_list[2].end_addr = CLINT_BASE + CLINT_SIZE;
+    bus->device_slave_list[2].write = clint_store;
+    bus->device_slave_list[2].read = clint_load;
+    bus->device_slave_list[2].proxy = NULL;
+    return bus;
+}
+
+
+struct device_slave_t* bus_get_device(bus_t *bus, uint64_t addr);
+
+struct device_slave_t* bus_get_device(bus_t *bus, uint64_t addr){
+    for(int i = 0; i < bus->nr_devices; i++){
+        struct device_slave_t* device = &bus->device_slave_list[i];
         if(addr >= device->base_addr && addr < device->end_addr){
             return device;
         }
@@ -190,45 +78,51 @@ struct device_slave_t* bus_get_device(uint64_t addr){
     return NULL;
 }
 
-bool bus_valid_addr(uint64_t addr) {
-    return bus_get_device(addr) != NULL;
+bool bus_valid_addr(bus_t *bus, uint64_t addr) {
+    return bus_get_device(bus, addr) != NULL;
 }
 
-void* bus_proxy(uint64_t addr){
-    struct device_slave_t* device = bus_get_device(addr);
-    assert(device); // Device must exist !
-    return device->proxy(addr - device->base_addr);
-}
-bool bus_read(uint64_t addr, uint64_t *data, uint8_t width, bool sign){
-    struct device_slave_t* device = bus_get_device(addr);
+void* bus_proxy(bus_t *bus, uint64_t addr){
+    struct device_slave_t* device = bus_get_device(bus, addr);
     if(!device){
+        fprintf(stderr, "No device at @ %x\n", addr);
+    }
+    assert(device); // Device must exist !
+    assert(device->proxy); // Device must proxy
+    return device->proxy(device->device, addr - device->base_addr);
+}
+
+bool bus_read(bus_t *bus, uint64_t addr, uint64_t *data, uint8_t width, bool sign){
+    struct device_slave_t* device = bus_get_device(bus, addr);
+    if(!device){
+        printf("NO DEVICEEEEEEEE @ %x\n\n", addr);
+        return 0;
+        
+    }
+    if(!device->read){
+        printf("NO READDDDDDDDDDD\n\n");
         return 0;
     }
     addr -= device->base_addr;
+    if(!device->read(device->device, addr, data, width)){
+        printf("DEVICE <%s> FAILURE @ %x\n\n", device->name, addr);
+        assert(0);
+        return 0;
+    }
     switch (width) {
         case 8: {
-            device->read64(addr, data);
         } break;
         case 4: {
-            uint32_t dw = 0;
-            device->read32(addr, &dw);
-            *data = dw;
             if (sign && ((*data) & (1 << 31))) {
                 *data |= 0xFFFFFFFF00000000;
             }
         } break;
         case 2: {
-            uint16_t dh = 0;
-            device->read16(addr, &dh);
-            *data |= dh;
             if (sign && ((*data) & (1 << 15))) {
                 *data |= 0xFFFFFFFFFFFF0000;
             }
         } break;
         case 1: {
-            uint8_t db = 0;
-            device->read8(addr, &db);
-            *data |= ((uint32_t)db << 0);
             if (sign && ((*data) & (1 << 7))) {
                 *data |= 0xFFFFFFFFFFFFFF00;
             }
@@ -240,36 +134,45 @@ bool bus_read(uint64_t addr, uint64_t *data, uint8_t width, bool sign){
     return 1;
 }
 
-bool bus_write(uint64_t addr, uint64_t data, uint8_t width){
-    struct device_slave_t* device = bus_get_device(addr);
+bool bus_write(bus_t *bus, uint64_t addr, uint64_t data, uint8_t width){
+    struct device_slave_t* device = bus_get_device(bus, addr);
     if(!device){
         return 0;
-    }    
+    } 
+    if(!device->write){
+        return 0;
+    }
     addr -= device->base_addr;
     switch (width) {
     case 8:
-        device->write64(addr, data);
         break;
     case 4:
-        device->write32(addr, data & 0xFFFFFFFF);
+        data &= 0xFFFFFFFF;
         break;
     case 2:
-        device->write16(addr, data & 0xFFFF);
+        data &= 0xFFFF;
         break;
     case 1:
-        device->write8(addr + 0, data & 0xFF);
+        data &= 0xFF;
         break;
     default:
         assert(!"Invalid");
         break;
     }
+    if(!device->write(device->device, addr, data, width)){
+        printf("DEVICE <%s> FAILURE W @=%x D=%x\n", device->name, addr, data);
+        assert(0);
+    }
     return 1;
 }
 
-
-void bus_display(void){
-    for(int i = 0; i < NR_DEVICES; i++){
-        struct device_slave_t* device = &device_slave_list[i];
+void bus_display(bus_t *bus){
+    for(int i = 0; i < bus->nr_devices; i++){
+        struct device_slave_t* device = &bus->device_slave_list[i];
         printf("device <%16s> [%x %x]\n", device->name, device->base_addr, device->end_addr);
     }
+}
+
+void bus_increment(bus_t *bus, uint64_t inc){
+    clint_increment(bus->device_slave_list[2].device, inc);
 }

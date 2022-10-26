@@ -18,6 +18,7 @@ class sim_t : public htif_t {
     sim_t(int argc, char **argv) : htif_t(argc, argv) {
         printf("Init sim_t...\n");
         htif_t::set_expected_xlen(SIM_XLEN);
+        intf_proc_init();
     }
     ~sim_t(){};
     int run() {

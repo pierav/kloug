@@ -11,6 +11,6 @@ $(PROJECT_DIR)/kloug_sim/build/libkloug.a: force
 	make -C $(PROJECT_DIR)/kloug_sim
 
 clean:
-	rm -r build
+	rm -rf build
 force:
 	@:
